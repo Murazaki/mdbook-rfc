@@ -1,0 +1,27 @@
+[package]
+name = "mdbook-rfc"
+version = "0.1.0"
+authors = ["Jan-Erik Rediger <janerik@fnordig.de>"]
+description = "mdbook preprocessor to handle RFC document creation"
+license = "MIT"
+homepage = "https://github.com/murazaki/mdbook-rfc"
+repository = "https://github.com/murazaki/mdbook-rfc"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "mdbook_rfc"
+path = "src/preprocessor.rs"
+
+[dependencies]
+cal = "0.0.1"
+clap = { version = "4.3.19", features = ["derive"] }
+env_logger = "0.10.0"
+error-stack = "0.3.1"
+log = "0.4.19"
+mdbook = "0.4.32"
+semver = "1.0.18"
+serde = { version = "1.0.180", features = ["derive"] }
+serde_json = "1.0.104"
+toml_edit = "0.19.14"
