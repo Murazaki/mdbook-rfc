@@ -1,15 +1,25 @@
+#![allow(non_snake_case)]
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RFCBookConfig {
-    textFolder: String,
-    vendorFolder: String,
-    templateFolder: String,
+    pub textFolder: String,
+    pub vendorFolder: String,
+    pub templateFolder: String,
+    
+    pub preprocessors: Vec<String>,
+    pub packages: Vec<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct BookConfig {
-    srcFolder: String,
-    buildFolder: String,
-    preprocessors: Vec<String>,
+impl Default for RFCBookConfig {
+    fn default() -> RFCBookConfig {
+        RFCBookConfig {
+            textFolder: "text".into(),
+            vendorFolder: "public".into(),
+            templateFolder: "template".into(),
+            preprocessors: Vec::new(),
+            packages: Vec::new(),
+        }
+    }
 }

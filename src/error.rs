@@ -1,8 +1,9 @@
 
-use std::{error::Error, fmt};
-use error_stack::{report, Result};    
+#![allow(non_snake_case)]
 
-#[derive(Debug)]
+use std::{error::Error, fmt};
+
+#[derive(Debug, Clone, Copy)]
 pub enum MdBookRFCError {
     Other
 }

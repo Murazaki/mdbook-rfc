@@ -1,30 +1,38 @@
 #![allow(non_snake_case)]
 
+use std::env::current_dir;
+use std::fs::create_dir;
+use std::fs::remove_dir_all;
 use std::io;
+use std::path::PathBuf;
 use std::process::Command;
 use std::process::exit;
 
 use clap::{Parser, Subcommand};
-use mdbook::MDBook;
-use serde::{Deserialize, Serialize};
 
 use error_stack::{report, Result};
 
 use env_logger;
-use log::{debug, warn, error};
+use log::error;
 
 use semver::{Version, VersionReq};
 
+use walkdir::WalkDir;
+
+use mdbook::Config as MDBookConfig;
 use mdbook::preprocess::CmdPreprocessor;
 use mdbook::preprocess::Preprocessor;
 
 use mdbook_rfc::preprocessor::RFCPreprocessor;
-use mdbook_rfc::config::{RFCBookConfig, BookConfig};
+use mdbook_rfc::config::RFCBookConfig;
 use mdbook_rfc::error::MdBookRFCError;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
+    /// 
+    #[arg(short, long, global = true)]
+    folder: Option<String>,
 	/// Option
 	#[command(subcommand)]
 	command: Option<CmdQuery>,
@@ -32,59 +40,38 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum CmdQuery {
-	/// Create a zip from a local folder
+	/// Initialize RFC book project
 	Init {
-		/// Folder with the custom emojis to generate the pack from.
-		#[arg(short, long)]
-		folder: String,
 	},
-	/// Create a zip from a local folder
+	/// Add preprocessor
+	Add {
+	},
+	/// Install prerequisites
 	Install {
-		/// Folder with the custom emojis to generate the pack from.
-		#[arg(short, long)]
-		folder: String,
 	},
-	/// Create a zip from a local folder
+	/// Build book
 	Build {
-		/// Folder with the custom emojis to generate the pack from.
-		#[arg(short, long)]
-		folder: String,
 	},
-	/// Create a zip from a local folder
+	/// Populate source folder and update summary
 	Populate {
-		/// Folder with the custom emojis to generate the pack from.
-		#[arg(short, long)]
-		folder: String,
 	},
 	/// Check whether a renderer is supported by this preprocessor
 	Supports {
-		/// Renderer
-		#[arg(short, long)]
-		renderer: String,
+        /// 
+        #[arg(short, long)]
+        renderer: String,
 	},
-	/// Create a zip from a remote instance content
+	/// Clean project
 	Clean {
-		/// Folder with the custom emojis to generate the pack from.
-		#[arg(short, long)]
-		folder: String,
 	},
-	/// Create a zip from a remote instance content
+	/// Watch for file modification and build
 	Watch {
-		/// Folder with the custom emojis to generate the pack from.
-		#[arg(short, long)]
-		folder: String,
 	},
-	/// Create a zip from a remote instance content
+	/// Create a new page from template
 	New {
-		/// Folder with the custom emojis to generate the pack from.
-		#[arg(short, long)]
-		folder: String,
 	},
-	/// Create a zip from a remote instance content
+	/// Serve book
 	Serve {
-		/// Folder with the custom emojis to generate the pack from.
-		#[arg(short, long)]
-		folder: String,
 	},
 }
 
@@ -93,7 +80,7 @@ fn main() {
 
     let args = Cli::parse();
 
-    match process(args.command) {
+    match process(args.folder, args.command) {
         Ok(()) => {},
         Err(err) => {
             error!("The process could not be completed. Quiting.");
@@ -103,72 +90,45 @@ fn main() {
 }
 
 fn process(
+    folder: Option<String>,
 	command: Option<CmdQuery>
 ) -> Result<(), MdBookRFCError> {
     
     // Users will want to construct their own preprocessor here
     let preprocessor = RFCPreprocessor::new();
+    let currentFolder = &folder.map(|s| PathBuf::from(s)).unwrap_or(current_dir().unwrap());
 
 	match command {
         Some(cmd) => match cmd {
-            CmdQuery::Init       { folder }      => {
-                MDBook::init(folder)
-                    .create_gitignore(true)
-                    //.with_config(cfg)
-                    .build()
-                    .expect("Book generation failed");
+            CmdQuery::Init       { }                        => {
+                handle_init(currentFolder)?;
             },
-            CmdQuery::Install    { folder }      => {
-                Command::new("mdbook install")
-                    .arg(folder)
-                    .output()
-                    .expect("Failed to execute command");
-
+            CmdQuery::Install    { }                        => {
+                handle_install(currentFolder)?;
             },
-            CmdQuery::Build      { folder }      => {
-                Command::new("mdbook build")
-                    .arg(folder)
-                    .output()
-                    .expect("Failed to execute command");
-
+            CmdQuery::Add    { }                            => {
+                handle_add(currentFolder)?;
             },
-            CmdQuery::Populate   { folder }      => {
-                Command::new("mdbook init")
-                    .arg(folder)
-                    .output()
-                    .expect("Failed to execute command");
-
+            CmdQuery::Build      { }                        => {
+                handle_build(currentFolder)?;
             },
-            CmdQuery::Supports   { renderer }    => {
+            CmdQuery::Populate   { }                        => {
+                handle_populate(currentFolder)?;
+            },
+            CmdQuery::Supports   { renderer }       => {
                 handle_supports(&preprocessor, renderer);
             },
-            CmdQuery::Clean      { folder }      => {
-                Command::new("mdbook clean")
-                    .arg(folder)
-                    .output()
-                    .expect("Failed to execute command");
-
+            CmdQuery::Clean      { }                        => {
+                handle_clean(currentFolder)?;
             },
-            CmdQuery::Watch      { folder }      => {
-                Command::new("mdbook watch")
-                    .arg(folder)
-                    .output()
-                    .expect("Failed to execute command");
-
+            CmdQuery::Watch      { }                        => {
+                handle_watch(currentFolder)?;
             },
-            CmdQuery::New        { folder }      => {
-                Command::new("cp")
-                    .arg(folder)
-                    .output()
-                    .expect("Failed to execute command");
-
+            CmdQuery::New        { }                        => {
+                handle_new(currentFolder)?;
             },
-            CmdQuery::Serve      { folder }      => {
-                Command::new("mdbook serve")
-                    .arg(folder)
-                    .output()
-                    .expect("Failed to execute command");
-
+            CmdQuery::Serve      { }                        => {
+                handle_serve(currentFolder)?;
             },
         }
         None => handle_preprocessing(&preprocessor)?
@@ -177,7 +137,157 @@ fn process(
 	Ok(())
 }
 
-fn handle_preprocessing(pre: &dyn Preprocessor) -> Result<(), MdBookRFCError> {
+fn fetch_mdbook_config(
+    currentFolder: &PathBuf,
+) -> Result<MDBookConfig, MdBookRFCError> {
+    Ok(MDBookConfig::from_disk(PathBuf::from(currentFolder).join("book.toml")).map_err(|_|
+        report!(MdBookRFCError::Other)
+                        .attach_printable("Could not fetch config.")
+    )?)
+}
+
+fn fetch_rfcbook_config(
+    mdBookCfg: MDBookConfig,
+) -> Result<RFCBookConfig, MdBookRFCError> {
+    let mut rfcBookCfg: RFCBookConfig = RFCBookConfig::default();
+
+    match mdBookCfg.get("preprocessor") {
+        Some(preprocessors) => {
+            for (prepName, prepParams ) in preprocessors.as_table().ok_or_else(||
+                report!(MdBookRFCError::Other)
+                                .attach_printable(format!("Could not parse array of preprocessors."))
+            )? {
+                let package = match prepParams.get("command") {
+                    Some(command) => command.as_str().unwrap(),
+                    None => prepName
+                };
+        
+                rfcBookCfg.preprocessors.push(prepName.into());
+                rfcBookCfg.packages.push(package.into());
+            };
+        },
+        None => println!("Could not find preprocessors to install.")
+    }
+
+    Ok(rfcBookCfg)
+}
+
+fn call_command(
+    program: &str,
+    args: Vec<&str>,
+    currentFolder: &PathBuf,
+    errorType: MdBookRFCError,
+    error_msg: &str,
+) -> Result<(), MdBookRFCError> {
+    let err_msg_string = error_msg.to_string();
+
+    let status = Command::new(program)
+    .current_dir(currentFolder)
+    .args(args)
+    .status()
+    .map_err(|_|
+        report!(errorType.clone())
+                        .attach_printable(err_msg_string.clone())
+    )?;
+
+    if !status.success() {
+        return Err(report!(errorType)
+                        .attach_printable(err_msg_string.clone()));
+    }
+
+    Ok(())
+}
+
+fn handle_init(
+    currentFolder: &PathBuf,
+) -> Result<(), MdBookRFCError>  {
+    let args = vec!["init"];
+
+    println!("Initializing book... ");
+    call_command("mdbook", args, currentFolder, MdBookRFCError::Other, "Could not initialize book.")?;
+
+    handle_install(currentFolder)?;
+
+    Ok(())
+}
+
+fn handle_build(
+    currentFolder: &PathBuf,
+) -> Result<(), MdBookRFCError> {
+    let args = vec!["build"];
+
+    println!("Building book... ");
+    call_command("mdbook", args, currentFolder, MdBookRFCError::Other, "Could not build book.")?;
+
+    Ok(())
+}
+
+fn handle_populate(
+    currentFolder: &PathBuf,
+) -> Result<(), MdBookRFCError> {
+    Ok(())
+}
+
+fn handle_install(
+    currentFolder: &PathBuf,
+) -> Result<(), MdBookRFCError> {
+
+    let mdBookCfg = fetch_mdbook_config(currentFolder)?;
+    let rfcBookCfg = fetch_rfcbook_config(mdBookCfg)?;
+
+    let preprocessorPackages: Vec<&str> = rfcBookCfg.packages.iter().map(|s|s.as_str()).collect();
+    let packages = [&["mdbook"], &preprocessorPackages[..]].concat();
+    let args = [&["install"], &packages[..]].concat();
+
+    println!("Installing preprocessor packages: {:?}... ", packages);
+    call_command("cargo", args, currentFolder, MdBookRFCError::Other, "Installing preprocessor packages failed.")?;
+
+    for folder in [rfcBookCfg.templateFolder, rfcBookCfg.textFolder, rfcBookCfg.vendorFolder] {
+        println!("Creating folder {:?}... ", folder);
+
+        let path = currentFolder.join(folder.clone());
+        if path.exists() {
+            println!("Folder '{:?}' exists, no action needed. ", folder);
+            continue;
+        }
+
+        create_dir(path).map_err(|_|
+            report!(MdBookRFCError::Other)
+                            .attach_printable(format!("Couldn't create folder {}.", folder))
+        )?;
+    }
+
+    Ok(())
+
+    // /TODO add project dir to extra-watch-dirs
+}
+
+fn handle_add(
+    currentFolder: &PathBuf,
+) -> Result<(), MdBookRFCError> {
+    let args = vec!["build"];
+
+    println!("Building book... ");
+    let status = Command::new("cargo")
+        .current_dir(currentFolder)
+        .args(args)
+        .status()
+        .map_err(|_|
+            report!(MdBookRFCError::Other)
+                            .attach_printable(format!("Could not initialize book."))
+        )?;
+
+    if !status.success() {
+        return Err(report!(MdBookRFCError::Other)
+                        .attach_printable(format!("Could not initialize book.")));
+    }
+
+    Ok(())
+}
+
+fn handle_preprocessing(
+    pre: &dyn Preprocessor
+) -> Result<(), MdBookRFCError> {
     let (ctx, book) = CmdPreprocessor::parse_input(io::stdin()).map_err(|_|
             report!(MdBookRFCError::Other)
                             .attach_printable(format!("Could not parse command input."))
@@ -214,7 +324,10 @@ fn handle_preprocessing(pre: &dyn Preprocessor) -> Result<(), MdBookRFCError> {
     Ok(())
 }
 
-fn handle_supports(pre: &dyn Preprocessor, renderer: String) -> ! {
+fn handle_supports(
+    pre: &dyn Preprocessor,
+    renderer: String,
+) -> ! {
     let supported: bool = pre.supports_renderer(&renderer);
 
     // Signal whether the renderer is supported by exiting with 1 or 0.
@@ -223,4 +336,55 @@ fn handle_supports(pre: &dyn Preprocessor, renderer: String) -> ! {
     } else {
         exit(1);
     }
+}
+
+fn handle_clean(
+    currentFolder: &PathBuf,
+) -> Result<(), MdBookRFCError> {
+    let args = vec!["clean"];
+
+    println!("cleaning book... ");
+    call_command("mdbook", args, currentFolder, MdBookRFCError::Other, "Could not initialize book.")?;
+
+    let mdBookCfg = fetch_mdbook_config(currentFolder)?;
+    let rfcBookCfg = fetch_rfcbook_config(mdBookCfg)?;
+
+    remove_dir_all(currentFolder.join(rfcBookCfg.vendorFolder)).unwrap();
+
+    Ok(())
+}
+
+fn handle_watch(
+    currentFolder: &PathBuf,
+) -> Result<(), MdBookRFCError> {
+    let args = vec!["watch"];
+
+    println!("Initializing book... ");
+    call_command("mdbook", args, currentFolder, MdBookRFCError::Other, "Could not initialize book.")?;
+
+    Ok(())
+}
+
+fn handle_new(
+    currentFolder: &PathBuf,
+) -> Result<(), MdBookRFCError> {
+    let mdBookCfg = fetch_mdbook_config(currentFolder)?;
+    let rfcBookCfg = fetch_rfcbook_config(mdBookCfg)?;
+
+    for template in WalkDir::new(rfcBookCfg.templateFolder) {
+
+    }
+
+    Ok(())
+}
+
+fn handle_serve(
+    currentFolder: &PathBuf,
+) -> Result<(), MdBookRFCError> {
+    let args = vec!["serve"];
+
+    println!("Serving book...");
+    call_command("mdbook", args, currentFolder, MdBookRFCError::Other, "Could not initialize book.")?;
+
+    Ok(())
 }
